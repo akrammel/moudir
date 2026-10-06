@@ -326,9 +326,9 @@
       "split_back": 2,
       "linear_meter_multiplier": 3
     },
-    "Dressing — tall element": {
+    "Dressing — tall element 02 doors": {
       "width": 800,
-      "height": 2600,
+      "height": 1760,
       "depth": 500,
       "material": "MDF 17mm",
       "facade": "High Gloss 18mm",
@@ -338,7 +338,7 @@
       "shelves": 3,
       "hanging_boxes": 0,
       "amortisseurs_per_door": 0,
-      "gola": 1,
+      "gola": 0,
       "plinthe": 1,
       "top": {
         "type": "strips",
@@ -347,7 +347,30 @@
       },
       "legs": 4,
       "split_back": 2,
-      "linear_meter_multiplier": 1
+      "linear_meter_multiplier": 3
+    },
+    "Dressing — tall element 01 door": {
+      "width": 600,
+      "height": 1760,
+      "depth": 500,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 1,
+      "drawers": 0,
+      "shelves": 3,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 0,
+      "plinthe": 1,
+      "top": {
+        "type": "strips",
+        "width_mm": 100,
+        "quantity": 2
+      },
+      "legs": 4,
+      "split_back": 2,
+      "linear_meter_multiplier": 3
     },
     "Dressing — short element": {
       "width": 800,
@@ -370,7 +393,7 @@
       "split_back": 0,
       "linear_meter_multiplier": 1
     },
-    "Dressing — drawer element": {
+    "Dressing — 03 drawers element": {
       "width": 800,
       "height": 780,
       "depth": 500,
