@@ -1,0 +1,473 @@
+{
+  "materials": {
+    "MDF 17mm": {
+      "sheet_w": 1790,
+      "sheet_h": 3660,
+      "price": 12500,
+      "color": "#E74C3C",
+      "thickness_mm": 17
+    },
+    "High Gloss 18mm": {
+      "sheet_w": 1200,
+      "sheet_h": 2800,
+      "price": 10000,
+      "color": "#3498DB",
+      "thickness_mm": 18
+    },
+    "MDF Back 5mm": {
+      "sheet_w": 1200,
+      "sheet_h": 2400,
+      "price": 1350,
+      "color": "#2ECC71",
+      "thickness_mm": 5
+    },
+    "Glass": {
+      "price_m2": 15000,
+      "sheet_w": 0,
+      "sheet_h": 0,
+      "price": 15000,
+      "color": "#F1C40F",
+      "thickness_mm": 0
+    },
+    "EGGER 19mm": {
+      "sheet_w": 2800,
+      "sheet_h": 2070,
+      "price": 23000,
+      "color": "#9B59B6",
+      "thickness_mm": 19
+    },
+    "Melamine 16mm": {
+      "sheet_w": 1790,
+      "sheet_h": 3660,
+      "price": 9500,
+      "color": "#E67E22",
+      "thickness_mm": 16
+    },
+    "Melamine 19mm": {
+      "sheet_w": 2800,
+      "sheet_h": 2100,
+      "price": 14000,
+      "color": "#1ABC9C",
+      "thickness_mm": 19
+    }
+  },
+  "edge_bands": {
+    "Structure Edge Band": {
+      "roll_m": 150,
+      "roll_price": 3000
+    },
+    "Door Edge Band": {
+      "roll_m": 150,
+      "roll_price": 3000
+    }
+  },
+  "hardware": {
+    "Hinge": {
+      "BNC": 130,
+      "SAMET": 250,
+      "BLUM": 650,
+      "DELCO": 300
+    },
+    "Amortisseur": {
+      "Premium": 100
+    },
+    "Drawer runner": {
+      "BNC": 1500,
+      "SAMET": 1700,
+      "BLUM": 7000
+    },
+    "Hanging box": {
+      "Premium": 75
+    }
+  },
+  "accessories": {
+    "Screw box": {
+      "price": 350
+    },
+    "Router bit": {
+      "price": 2000
+    },
+    "Leg": {
+      "price": 70
+    }
+  },
+  "gola": {
+    "bar_length_m": 4,
+    "price": 2700
+  },
+  "plinthe": {
+    "bar_length_m": 4,
+    "price": 1500
+  },
+  "presets": {
+    "Kitchen bottom — 01 door": {
+      "width": 400,
+      "height": 780,
+      "depth": 600,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 1,
+      "drawers": 0,
+      "shelves": 1,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 1,
+      "plinthe": 1,
+      "top": {
+        "type": "strips",
+        "width_mm": 100,
+        "quantity": 2
+      },
+      "legs": 4,
+      "split_back": 2,
+      "linear_meter_multiplier": 1
+    },
+    "Kitchen bottom — 02 doors": {
+      "width": 800,
+      "height": 780,
+      "depth": 600,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 2,
+      "drawers": 0,
+      "shelves": 1,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 1,
+      "plinthe": 1,
+      "top": {
+        "type": "strips",
+        "width_mm": 100,
+        "quantity": 2
+      },
+      "legs": 4,
+      "split_back": 2,
+      "linear_meter_multiplier": 1
+    },
+    "Kitchen bottom — 3 drawers": {
+      "width": 620,
+      "height": 780,
+      "depth": 600,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 0,
+      "drawers": 3,
+      "shelves": 0,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 1,
+      "plinthe": 1,
+      "top": {
+        "type": "strips",
+        "width_mm": 100,
+        "quantity": 2
+      },
+      "legs": 4,
+      "split_back": 2,
+      "linear_meter_multiplier": 1
+    },
+    "Kitchen bottom — 2 drawers": {
+      "width": 620,
+      "height": 780,
+      "depth": 600,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 0,
+      "drawers": 2,
+      "shelves": 0,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 1,
+      "plinthe": 1,
+      "top": {
+        "type": "strips",
+        "width_mm": 100,
+        "quantity": 2
+      },
+      "legs": 4,
+      "split_back": 2,
+      "linear_meter_multiplier": 1
+    },
+    "Kitchen top hanging — 02 doors": {
+      "width": 800,
+      "height": 720,
+      "depth": 350,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 2,
+      "drawers": 0,
+      "shelves": 1,
+      "hanging_boxes": 2,
+      "amortisseurs_per_door": 0,
+      "gola": 0,
+      "plinthe": 0,
+      "top": {
+        "type": "full"
+      },
+      "legs": 0,
+      "split_back": 0,
+      "linear_meter_multiplier": 1
+    },
+    "Kitchen top hanging — 01 door": {
+      "width": 400,
+      "height": 720,
+      "depth": 350,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 1,
+      "drawers": 0,
+      "shelves": 1,
+      "hanging_boxes": 2,
+      "amortisseurs_per_door": 0,
+      "gola": 0,
+      "plinthe": 0,
+      "top": {
+        "type": "full"
+      },
+      "legs": 0,
+      "split_back": 0,
+      "linear_meter_multiplier": 1
+    },
+    "Kitchen top hanging — HOTTE": {
+      "width": 620,
+      "height": 550,
+      "depth": 350,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 1,
+      "drawers": 0,
+      "shelves": 1,
+      "hanging_boxes": 2,
+      "amortisseurs_per_door": 1,
+      "gola": 0,
+      "plinthe": 0,
+      "top": {
+        "type": "full"
+      },
+      "legs": 0,
+      "split_back": 0,
+      "linear_meter_multiplier": 1
+    },
+    "Kitchen hat — one door": {
+      "width": 900,
+      "height": 400,
+      "depth": 600,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 1,
+      "drawers": 0,
+      "shelves": 0,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 2,
+      "gola": 0,
+      "plinthe": 0,
+      "top": {
+        "type": "full"
+      },
+      "legs": 0,
+      "split_back": 0,
+      "linear_meter_multiplier": 1
+    },
+    "Colonne FMO": {
+      "width": 600,
+      "height": 2600,
+      "depth": 600,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 2,
+      "drawers": 0,
+      "shelves": 2,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 1,
+      "plinthe": 1,
+      "top": {
+        "type": "full"
+      },
+      "legs": 4,
+      "split_back": 2,
+      "linear_meter_multiplier": 3
+    },
+    "Kitchen finishing panel": {
+      "width": 600,
+      "height": 780,
+      "material": "High Gloss 18mm",
+      "facade": "High Gloss 18mm",
+      "type": "2d_panel",
+      "linear_meter_multiplier": 0
+    },
+    "Colonne réfrigérateur": {
+      "width": 800,
+      "height": 2600,
+      "depth": 650,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 2,
+      "drawers": 0,
+      "shelves": 1,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 1,
+      "plinthe": 1,
+      "top": {
+        "type": "full"
+      },
+      "legs": 4,
+      "split_back": 2,
+      "linear_meter_multiplier": 3
+    },
+    "Dressing — tall element": {
+      "width": 800,
+      "height": 2600,
+      "depth": 500,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 2,
+      "drawers": 0,
+      "shelves": 3,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 1,
+      "plinthe": 1,
+      "top": {
+        "type": "strips",
+        "width_mm": 100,
+        "quantity": 2
+      },
+      "legs": 4,
+      "split_back": 2,
+      "linear_meter_multiplier": 1
+    },
+    "Dressing — short element": {
+      "width": 800,
+      "height": 600,
+      "depth": 500,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 2,
+      "drawers": 0,
+      "shelves": 1,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 0,
+      "plinthe": 0,
+      "top": {
+        "type": "full"
+      },
+      "legs": 0,
+      "split_back": 0,
+      "linear_meter_multiplier": 1
+    },
+    "Dressing — drawer element": {
+      "width": 800,
+      "height": 780,
+      "depth": 500,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 0,
+      "drawers": 3,
+      "shelves": 0,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 0,
+      "plinthe": 0,
+      "top": {
+        "type": "full"
+      },
+      "legs": 0,
+      "split_back": 0,
+      "linear_meter_multiplier": 1
+    }
+  },
+  "settings": {
+    "nesting": {
+      "gap_mm": 10,
+      "iterations": 100,
+      "min_iterations": 1,
+      "max_iterations": 1000,
+      "iteration_step": 10,
+      "rotation_angles": [
+        0,
+        90
+      ],
+      "randomization_min": 0.85,
+      "randomization_range": 0.3
+    },
+    "construction": {
+      "side_edge_enabled": 1,
+      "structure_edge_enabled": 1,
+      "shelf_edge_enabled": 1,
+      "door_edge_enabled": 1,
+      "top_bottom_width_reduction_mm": 36,
+      "shelf_width_reduction_mm": 36,
+      "shelf_depth_reduction_mm": 20,
+      "back_width_reduction_mm": 12,
+      "back_height_reduction_mm": 12,
+      "door_spacing_mm": 3,
+      "door_height_reduction_mm": 5,
+      "drawer_width_reduction_mm": 6,
+      "drawer_height_clearance_mm": 40,
+      "drawer_front_max_height_mm": 180,
+      "door_width_reduction_mm": 5,
+      "drawer_front_width_reduction_mm": 5,
+      "drawer_front_height_reduction_mm": 5,
+      "drawer_box_height_mm": 150,
+      "drawer_box_depth_mm": 450,
+      "drawer_box_width_reduction_mm": 5
+    },
+    "hardware": {
+      "hinge_limits_mm": [
+        1050,
+        1600,
+        2100
+      ],
+      "hinge_counts": [
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    "production_costs": {
+      "screw_boxes": 1,
+      "router_bits": 1,
+      "manufacturing_days": 1.0,
+      "manufacturing_labor": 12000,
+      "client_installation": 10000,
+      "transport": 5000,
+      "rent_per_day": 9000,
+      "led_strip_price_per_m": 70,
+      "aluminium_bar_length_m": 2.4,
+      "aluminium_bar_price": 550
+    },
+    "margin": {
+      "default_per_linear_meter": 10000,
+      "default_fixed_project": 100000,
+      "default_per_cubic_meter": 50000
+    },
+    "custom_cabinet_defaults": {
+      "width": 600,
+      "height": 780,
+      "depth": 560,
+      "doors": 1,
+      "shelves": 1,
+      "drawers": 0,
+      "bottom": 1,
+      "back_enabled": 1,
+      "door_type": "Panneau"
+    }
+  }
+}
