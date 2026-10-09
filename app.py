@@ -1,4 +1,4 @@
-import json, math, io, hashlib, sqlite3
+import json, math, io, hashlib, sqlite3, re
 from datetime import datetime
 from pathlib import Path
 import streamlit as st
@@ -17,6 +17,16 @@ def _compat_reportlab_md5(data=b'', *args, **kwargs):
     return _original_md5(data)
 _reportlab_pdfdoc.md5 = _compat_reportlab_md5
 import matplotlib.pyplot as plt
+
+
+# All user-facing UI labels are loaded from lang.json. Missing keys fall back to the key itself.
+LANG_FILE = Path(__file__).parent / "lang.json"
+try:
+    LANG = json.loads(LANG_FILE.read_text(encoding="utf-8")) if LANG_FILE.exists() else {}
+except (OSError, json.JSONDecodeError):
+    LANG = {}
+def text(key):
+    return str(LANG.get(key, key))
 
 # Business rules and prices live in presets.json; this app performs the calculations.
 from matplotlib.patches import Rectangle
@@ -37,6 +47,82 @@ hardware_cfg=settings.get('hardware', {})
 production_cfg=settings.get('production_costs', {})
 margin_cfg=settings.get('margin', {})
 custom_cfg=settings.get('custom_cabinet_defaults', {})
+
+
+def _sheet_material_options():
+    """Materials available for structure/back nesting; area-priced glass is excluded."""
+    return [name for name, cfg in materials.items()
+            if float(cfg.get('sheet_w', 0) or 0) > 0
+            and float(cfg.get('sheet_h', 0) or 0) > 0
+            and 'price' in cfg
+            and name != 'Glass']
+
+
+def _facade_material_options():
+    """Return only materials explicitly enabled for facade use in presets.json."""
+    return [name for name, cfg in materials.items()
+            if bool(int(cfg.get('canbefacade', 0)))]
+
+
+STRUCTURE_MATERIALS = _sheet_material_options()
+BACK_MATERIALS = _sheet_material_options()
+FACADE_MATERIALS = _facade_material_options()
+DEFAULT_PRESET = next(iter(presets.values()), {})
+
+
+def material_html(name, fallback='—'):
+    """Consistent colored material dot + name for structure/facade display."""
+    if not name or name not in materials:
+        return fallback
+    color = str(materials[name].get('color', '#808080'))
+    safe_name = (str(name).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
+    return f'<span style="white-space:nowrap"><span style="color:{color};font-size:2.2em">●</span> {safe_name}</span>'
+
+
+def material_selection(name, container=None):
+    """Render a consistent colored material marker beside every material selector."""
+    target = container if container is not None else st
+    target.markdown(material_html(name), unsafe_allow_html=True)
+    return name
+
+
+def part_label(name):
+    """Translate part names for nesting visuals while preserving unique piece numbers."""
+    raw = str(name)
+    match = re.match(r'^(.*?)(\s+#\d+)$', raw)
+    base_name, suffix = (match.group(1), match.group(2)) if match else (raw, '')
+    labels = {
+        'Finishing panel': 'partFinishingPanel',
+        'Côté gauche': 'partLeftSide', 'Côté droit': 'partRightSide',
+        'Haut': 'partTop', 'Bas': 'partBottom', 'Étagère': 'partShelf',
+        'Séparateur vertical': 'partVerticalSeparator', 'Fond': 'partBack',
+        'Fond 1': 'partBackOne', 'Fond 2': 'partBackTwo', 'Door': 'partDoor',
+        'Front de drawer': 'partDrawerFront', 'Drawer box side': 'partDrawerBoxSide',
+        'Drawer box front/back': 'partDrawerBoxFrontBack', 'Drawer box bottom': 'partDrawerBoxBottom',
+    }
+    if base_name.startswith('Haut strip '):
+        return f"{text('partTopStrip')} {base_name.rsplit(' ', 1)[-1]}{suffix}"
+    return f"{text(labels.get(base_name, 'partOther'))}{suffix}"
+
+
+def project_cabinet_count(project):
+    """Count physical cabinets, excluding 2D finishing panels."""
+    return sum(max(0, int(item.get('qty', 1) or 0)) for item in project
+               if item.get('cabinet', {}).get('type') != '2d_panel')
+
+
+def automatic_production_quantities(project):
+    """Derive consumables and manufacturing days from physical cabinet quantity."""
+    count = project_cabinet_count(project)
+    screw_batch = max(1, int(production_cfg.get('screw_box_per_cabinets', 10) or 10))
+    bit_batch = max(1, int(production_cfg.get('router_bit_per_cabinets', 20) or 20))
+    day_capacity = max(1, int(production_cfg.get('cabinets_per_manufacturing_day', 15) or 15))
+    return {
+        'cabinets': count,
+        'screws': math.ceil(count / screw_batch) if count else 0,
+        'bits': math.ceil(count / bit_batch) if count else 0,
+        'days': math.ceil(count / day_capacity) if count else 0,
+    }
 
 
 # Gola / plinth pricing is read directly from presets.json.
@@ -298,12 +384,12 @@ def _logout():
     st.rerun()
 
 def _login_screen():
-    st.title('AL MOUDIR MOBILIER')
-    st.subheader('Sign in')
+    st.title(text('alMoudirMobilier'))
+    st.subheader(text('signIn'))
     with st.form('login_form'):
-        username = st.text_input('Username')
-        password = st.text_input('Password', type='password')
-        submitted = st.form_submit_button('Sign in', type='primary')
+        username = st.text_input(text('username'))
+        password = st.text_input(text('password'), type='password')
+        submitted = st.form_submit_button(text('signIn'), type='primary')
     if submitted:
         user = _authenticate(username.strip(), password)
         if user:
@@ -312,7 +398,7 @@ def _login_screen():
             st.session_state['role'] = user.get('role', 'user')
             st.rerun()
         else:
-            st.error('Invalid username or password.')
+            st.error(text('invalidUsernameOrPassword'))
 
 if not st.session_state.get('authenticated', False):
     _login_screen()
@@ -332,11 +418,12 @@ if _project_was_loaded and st.session_state.pop('_pending_duplicate_after_load',
     if save_err:
         st.error(save_err)
     else:
-        st.success(f'Project duplicated as {pid}.')
+        st.success(text('duplicated').format(id=pid))
         st.rerun()
 
-# Default margin strategy for Users is X3. Admin keeps the normal selectable strategy.
-# Track the role so a user login does not inherit an Admin's previous strategy.
+# X3 is the default margin strategy for both Admin and User sessions.
+st.session_state.setdefault('margin_strategy', 'X3')
+# Track the role so a user login does not inherit another role's strategy.
 if not IS_ADMIN:
     current_user_strategy = _user_margin_strategy(st.session_state.get('username', ''))
     if not st.session_state.get('_margin_strategy_from_project'):
@@ -347,13 +434,14 @@ if not IS_ADMIN:
     st.session_state['_margin_strategy_role'] = 'user'
     st.session_state['_margin_strategy_user'] = st.session_state.get('username')
 elif st.session_state.get('_margin_strategy_role') != 'admin':
+    st.session_state['margin_strategy'] = 'X3'
     st.session_state['_margin_strategy_role'] = 'admin'
     st.session_state['_margin_strategy_user'] = st.session_state.get('username')
 
-st.title('AL MOUDIR MOBILIER')
+st.title(text('alMoudirMobilier'))
 user_col, action_col = st.columns([8,1])
 user_col.caption(f"Signed in as **{st.session_state.get('username','')}** · {'Administrator' if IS_ADMIN else 'User'}")
-if action_col.button('Logout'):
+if action_col.button(text('logout')):
     _logout()
 if 'project' not in st.session_state: st.session_state.project=[]
 if 'cfg' not in st.session_state: st.session_state.cfg={'screws':production_cfg['screw_boxes'],'bits':production_cfg['router_bits'],'led_al_m':2.0,'days':production_cfg['manufacturing_days'],'hand':production_cfg['manufacturing_labor'],'install':production_cfg['client_installation'],'transport':production_cfg['transport'],'rent':production_cfg['rent_per_day'],'margin_m':margin_cfg['default_per_linear_meter'],'fixed':margin_cfg['default_fixed_project'],'margin_m3':margin_cfg.get('default_per_cubic_meter',40000),'structure_edge_roll_price':float(edges['Structure Edge Band']['roll_price']),'door_edge_roll_price':float(edges['Door Edge Band']['roll_price'])}
@@ -399,19 +487,24 @@ def make_parts(c,q):
     # cabinet depth or cabinet construction rules. It uses the facade material.
     if c.get('type') == '2d_panel':
         W=float(c['width']); H=float(c['height']); f=c.get('facade',c.get('material'))
+        glass = f == 'Glass'
         edge_enabled=c.get('edge_door',construction_cfg['door_edge_enabled'])
-        edge=2*(W+H)/1000*edge_enabled
+        edge=0 if glass else 2*(W+H)/1000*edge_enabled
         return [{'name':'Finishing panel','qty':q,'w':round(W),'h':round(H),'material':f,
-                 'edge_m':round(edge,3),'edge_type':'Door','category':'2D Panel','glass':False}]
+                 'edge_m':round(edge,3),'edge_type':'Door','category':'2D Panel','glass':glass}]
 
     W,H,D=c['width'],c['height'],c['depth']; m=c['material']; f=c.get('facade',m); back=c.get('back',m); out=[]
     def add(name,n,w,h,mat,edge=0,cat='Structure',glass=False): out.append({'name':name,'qty':n,'w':round(w),'h':round(h),'material':mat,'edge_m':round(edge,3),'edge_type':'Door' if cat=='Door' else 'Structure','category':cat,'glass':glass})
     material_cfg=materials.get(m,{})
     material_thickness=float(material_cfg.get('thickness_mm',0) or 0)
+    # Entered cabinet depth is the finished external depth, including facade.
+    # Calculate all structure-depth parts from the selected facade material.
+    facade_thickness=float(materials.get(f,{}).get('thickness_mm',0) or 0)
+    structure_depth=max(0.0,float(D)-facade_thickness)
     side_height=max(0,H-material_thickness)
     se=c.get('edge_side',construction_cfg['side_edge_enabled'])*side_height/1000
-    add('Côté gauche',q,D,side_height,m,se); add('Côté droit',q,D,side_height,m,se)
-    te=c.get('edge_struct',construction_cfg['structure_edge_enabled'])*(W+D)/1000
+    add('Côté gauche',q,structure_depth,side_height,m,se); add('Côté droit',q,structure_depth,side_height,m,se)
+    te=c.get('edge_struct',construction_cfg['structure_edge_enabled'])*(W+structure_depth)/1000
     top_cfg=c.get('top',{}) or {}
     if top_cfg.get('type')=='strips':
         strip_w=float(top_cfg.get('width_mm',100))
@@ -423,9 +516,21 @@ def make_parts(c,q):
             add(f'Haut strip {i+1}',q,strip_length,strip_w,m,strip_edge)
     else:
         top_width=max(0,W-2*material_thickness)
-        add('Haut',q,top_width,D,m,te)
-    if c.get('bottom', bool(custom_cfg['bottom'])): add('Bas',q,W,D,m,te)
-    if c.get('shelves',0): add('Étagère',c['shelves']*q,W-construction_cfg['shelf_width_reduction_mm'],D-construction_cfg['shelf_depth_reduction_mm'],m,c.get('edge_shelf',construction_cfg['shelf_edge_enabled'])*(W+D)/1000)
+        add('Haut',q,top_width,structure_depth,m,te)
+    if c.get('bottom', bool(custom_cfg['bottom'])): add('Bas',q,W,structure_depth,m,te)
+    if c.get('shelves',0):
+        shelf_w=max(0,W-construction_cfg['shelf_width_reduction_mm'])
+        shelf_d=max(0,structure_depth-construction_cfg['shelf_depth_reduction_mm'])
+        add('Étagère',int(c.get('shelves',0))*q,shelf_w,shelf_d,m,c.get('edge_shelf',construction_cfg['shelf_edge_enabled'])*(shelf_w+shelf_d)/1000)
+
+    # Optional full-depth vertical separators, cut from the structure material.
+    separator_count=max(0,int(c.get('vertical_separators',0) or 0))
+    if separator_count:
+        separator_h=max(0,H-2*material_thickness)
+        separator_d=structure_depth
+        separator_edge=c.get('edge_side',construction_cfg['side_edge_enabled'])*separator_h/1000
+        add('Séparateur vertical',separator_count*q,separator_d,separator_h,m,separator_edge)
+
     if c.get('back_enabled', bool(custom_cfg['back_enabled'])):
         back_w=W-construction_cfg['back_width_reduction_mm']
         back_h=H-construction_cfg['back_height_reduction_mm']
@@ -472,48 +577,59 @@ def make_parts(c,q):
                 f'Back panel {back_w:.0f}x{back_h:.0f} mm does not fit the {back_sw:.0f}x{back_sh:.0f} mm back sheet and split_back is not set to 2.'
             )
 
-    # Facade pieces must also be sent to nesting. They use the facade
-    # material (or Glass for glass doors) and are never split.
+    # Facade pieces use the selected facade material. Glass is chosen directly
+    # from the facade-material list and is costed by area instead of sheet nesting.
     if c.get('doors', 0):
         dw=(W-(c['doors']-1)*construction_cfg['door_spacing_mm'])/c['doors']-construction_cfg['door_width_reduction_mm']
         dh=H-construction_cfg['door_height_reduction_mm']
-        glass=c.get('door_type')=='Glass'
-        mat='Glass' if glass else f
-        add('Door',c['doors']*q,dw,dh,mat,
+        glass=f == 'Glass'
+        add('Door',c['doors']*q,dw,dh,f,
             0 if glass else c.get('edge_door',construction_cfg['door_edge_enabled'])*2*(dw+dh)/1000,
             'Door',glass)
 
-    if c.get('drawers', 0):
-        drawer_qty=int(c.get('drawers', 0))*q
+    visible_drawers=max(0,int(c.get('drawers',0) or 0))
+    internal_drawers=max(0,int(c.get('internal_drawers',0) or 0))
+
+    # Visible drawer fronts use the selected facade material; internal drawers
+    # are box-only and do not create extra visible facade panels.
+    if visible_drawers:
+        drawer_qty=visible_drawers*q
         fh=min(
             construction_cfg['drawer_front_max_height_mm'],
-            (H-construction_cfg['drawer_height_clearance_mm'])/c['drawers']
+            max(0,(H-construction_cfg['drawer_height_clearance_mm'])/visible_drawers)
         )
-        drawer_w=W-construction_cfg['drawer_width_reduction_mm']-construction_cfg['drawer_front_width_reduction_mm']
-        drawer_h=fh-construction_cfg['drawer_front_height_reduction_mm']
+        drawer_w=max(0,W-construction_cfg['drawer_width_reduction_mm']-construction_cfg['drawer_front_width_reduction_mm'])
+        drawer_h=max(0,fh-construction_cfg['drawer_front_height_reduction_mm'])
+        drawer_glass = f == 'Glass'
         add('Front de drawer',drawer_qty,drawer_w,drawer_h,f,
-            c.get('edge_door',construction_cfg['door_edge_enabled'])*2*(drawer_w+drawer_h)/1000,
-            'Door')
+            0 if drawer_glass else c.get('edge_door',construction_cfg['door_edge_enabled'])*2*(drawer_w+drawer_h)/1000,
+            'Door',drawer_glass)
 
-        # Drawer box: real 5-piece interior, generated from JSON dimensions.
-        # External box dimensions: width = cabinet width - configured reduction,
-        # height/depth are configured in JSON. Material is the cabinet structure material.
+    # Every visible or internal drawer gets a complete 5-piece drawer box.
+    # Internal drawers intentionally have no facade/front part; their boxes
+    # are still included in material nesting and COGS.
+    total_drawer_boxes=(visible_drawers+internal_drawers)*q
+    if total_drawer_boxes:
         box_w=max(0,W-construction_cfg.get('drawer_box_width_reduction_mm',5))
         box_h=max(0,construction_cfg.get('drawer_box_height_mm',150))
-        box_d=max(0,construction_cfg.get('drawer_box_depth_mm',450))
+        box_d=max(0,min(structure_depth,construction_cfg.get('drawer_box_depth_mm',450)))
         t=max(0,material_thickness)
-        # Two side panels, front/back panels, and one bottom panel.
-        # The bottom sits between the four vertical panels.
         side_h=max(0,box_h-t)
         side_d=box_d
         front_back_w=max(0,box_w-2*t)
         front_back_h=side_h
         bottom_w=front_back_w
         bottom_d=max(0,box_d-t)
-        add('Drawer box side',drawer_qty,side_d,side_h,m,0,'Drawer Box')
-        add('Drawer box side',drawer_qty,side_d,side_h,m,0,'Drawer Box')
-        add('Drawer box front/back',drawer_qty*2,front_back_w,front_back_h,m,0,'Drawer Box')
-        add('Drawer box bottom',drawer_qty,bottom_w,bottom_d,m,0,'Drawer Box')
+        add('Drawer box side',total_drawer_boxes,side_d,side_h,m,0,'Drawer Box')
+        add('Drawer box side',total_drawer_boxes,side_d,side_h,m,0,'Drawer Box')
+        add('Drawer box front/back',total_drawer_boxes*2,front_back_w,front_back_h,m,0,'Drawer Box')
+        # Bottom material is independently selectable; dimensions intentionally
+        # retain the existing drawer-box sizing formula. Old saved cabinets
+        # without this field fall back to the cabinet structure material.
+        bottom_mat=c.get('drawer_bottom_material',m)
+        if bottom_mat not in materials or not float(materials.get(bottom_mat,{}).get('sheet_w',0) or 0) or not float(materials.get(bottom_mat,{}).get('sheet_h',0) or 0):
+            bottom_mat=m
+        add('Drawer box bottom',total_drawer_boxes,bottom_w,bottom_d,bottom_mat,0,'Drawer Box')
 
     return out
 
@@ -733,8 +849,9 @@ def render_sheet_png(s, i):
     material_color = materials.get(mat, {}).get('color', '#95A5A6')
     for name,x,y,w,h,*angle_data in s['placements']:
         ax.add_patch(Rectangle((x,y),w,h,facecolor=material_color,edgecolor='black',linewidth=0.8,alpha=0.72))
-        ax.text(x+w/2,y+h/2,f'{name}\n{w}×{h}',ha='center',va='center',fontsize=7,color='black')
-    ax.set(xlim=(0,sw),ylim=(0,sh),aspect='equal',title=f'Panel {i} — {mat} — {sw}×{sh} mm')
+        ax.text(x+w/2,y+h/2,f'{part_label(name)}\n{w}×{h}',ha='center',va='center',fontsize=7,color='black')
+    ax.set(xlim=(0,sw),ylim=(0,sh),aspect='equal',title=f"{text('nestingPanel')} {i} — {mat} — {sw}×{sh} mm")
+    ax.title.set_color(material_color)
     ax.invert_yaxis()
     ax.margins(0)
     buf=io.BytesIO()
@@ -781,13 +898,11 @@ def calculate_operating_costs(cfg):
     }
 
 
-def calculate_x3_eligible_costs(total_cogs, cfg):
-    """X3 base: exclude manufacturing labor, rent, transport and client installation.
-
-    This is the single source of truth for the X3 eligible-cost rule.
-    """
+def calculate_x3_eligible_costs(total_cogs, cfg, glass_cost=0):
+    """X3 base excludes glass and operating costs."""
     op = calculate_operating_costs(cfg)
     eligible = (float(total_cogs)
+                - float(glass_cost)
                 - op['manufacturing_labor']
                 - op['rent']
                 - op['transport']
@@ -795,7 +910,7 @@ def calculate_x3_eligible_costs(total_cogs, cfg):
     return max(0.0, eligible)
 
 
-def calculate_margin_and_selling_price(total_cogs, linear_m, volume_m3, cfg, strategy):
+def calculate_margin_and_selling_price(total_cogs, linear_m, volume_m3, cfg, strategy, glass_cost=0):
     """Calculate margin and selling price from one centralized strategy function."""
     if strategy == 'Margin per linear meter':
         margin = float(linear_m) * float(cfg.get('margin_m', 0))
@@ -810,10 +925,12 @@ def calculate_margin_and_selling_price(total_cogs, linear_m, volume_m3, cfg, str
         label = 'Fixed project margin'
         final = float(total_cogs) + margin
     else:
-        eligible = calculate_x3_eligible_costs(total_cogs, cfg)
-        final = eligible * 3
+        eligible = calculate_x3_eligible_costs(total_cogs, cfg, glass_cost)
+        glass_selling_value = float(glass_cost) * 2
+        final = eligible * 3 + glass_selling_value
         margin = final - float(total_cogs)
-        label = f"X3 — eligible costs × 3 ({eligible:,.0f} DA base)"
+        label = (f"X3 — non-glass eligible costs × 3 ({eligible:,.0f} DA base) "
+                 f"+ glass × 2 ({glass_selling_value:,.0f} DA)")
     margin_pct = (margin / final * 100) if final else 0.0
     return {
         'margin': margin,
@@ -885,7 +1002,8 @@ def calculate_edge_banding(rows, structure_roll_price=None, door_roll_price=None
     struct_m = sum(front_edge_length(r) * r['qty'] / 1000 for r in rows if r.get('edge_type') == 'Structure')
     door_m = sum(
         (2 * float(r.get('w', 0)) + 2 * float(r.get('h', 0))) * r['qty'] / 1000
-        for r in rows if r.get('edge_type') == 'Porte' or is_front_visible_part(r.get('name', ''))
+        for r in rows if not r.get('glass', False)
+        and (r.get('edge_type') == 'Porte' or is_front_visible_part(r.get('name', '')))
     )
     structure_roll_price = float(edges['Structure Edge Band']['roll_price'] if structure_roll_price is None else structure_roll_price)
     door_roll_price = float(edges['Door Edge Band']['roll_price'] if door_roll_price is None else door_roll_price)
@@ -906,7 +1024,9 @@ def calculate_hardware_and_legs(project):
         c, qty = x['cabinet'], x['qty']
         hq += c.get('doors', 0) * qty * hinge_count(c['height'])
         aq += c.get('doors', 0) * qty * c.get('amortisseurs_per_door', 1)
-        dq += c.get('drawers', 0) * qty
+        # Each external drawer and each internal drawer requires one complete
+        # drawer-runner set (left + right rail). The preset price is per set.
+        dq += (c.get('drawers', 0) + c.get('internal_drawers', 0)) * qty
         gq += c.get('hanging_boxes', 0) * qty
         legs_q += int(c.get('legs', 0)) * qty
     hardware_cost = (
@@ -1011,8 +1131,8 @@ def calculate_project():
             + gp['gola_cost'] + gp['plinthe_cost'] + operating['total'])
 
     dimensions = calculate_project_dimensions(project)
-    strategy = st.session_state.get('margin_strategy', 'Margin per linear meter')
-    pricing = calculate_margin_and_selling_price(cogs, dimensions['linear_m'], dimensions['volume_m3'], cfg, strategy)
+    strategy = st.session_state.get('margin_strategy', 'X3')
+    pricing = calculate_margin_and_selling_price(cogs, dimensions['linear_m'], dimensions['volume_m3'], cfg, strategy, glass_cost)
     sheet_rows = build_sheet_rows(sheets)
     cogs_rows = build_cogs_rows(cfg, edge, gp, hw, accessories_cost, led_info, operating, glass_area, glass_cost)
 
@@ -1048,9 +1168,16 @@ def build_project_pdf(result, include_financials=True):
     ]
     t=Table(info,colWidths=[35*mm,145*mm]); t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.4,colors.grey),('BACKGROUND',(0,0),(0,-1),colors.whitesmoke),('VALIGN',(0,0),(-1,-1),'TOP')])); story += [t]
     story += [Paragraph('1. Project Cabinets',styles['Section'])]
-    cab=[['Cabinet','Qty','W (mm)','H (mm)','D (mm)','Material','Facade','Back','Gola','Plinth']]
+    cab=[['Cabinet','Qty','W (mm)','H (mm)','D (mm)','Structure','Facade','Back','Gola','Plinth']]
     for x in st.session_state.project:
-        c=x['cabinet']; cab.append([x['name'],x['qty'],c.get('width',''),c.get('height',''),c.get('depth',''),c.get('material',''),c.get('facade',''),c.get('back',''),c.get('gola',0),c.get('plinthe',0)])
+        c=x['cabinet']
+        smat=c.get('material',''); fmat=c.get('facade', smat)
+        def pdf_material(name):
+            if not name:
+                return '—'
+            col=str(materials.get(name,{}).get('color','#808080')).lstrip('#')
+            return Paragraph(f'<font color="#{col}">●</font> {str(name).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}', styles['Small'])
+        cab.append([x['name'],x['qty'],c.get('width',''),c.get('height',''),c.get('depth',''),pdf_material(smat),pdf_material(fmat),c.get('back',''),c.get('gola',0),c.get('plinthe',0)])
     t=Table(cab,colWidths=[31*mm,10*mm,11*mm,11*mm,11*mm,23*mm,23*mm,23*mm,9*mm,9*mm],repeatRows=1); t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.3,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.lightgrey),('FONTSIZE',(0,0),(-1,-1),6.5),('VALIGN',(0,0),(-1,-1),'TOP')])); story += [t]
     story += [Paragraph('2. Hardware',styles['Section']),Paragraph(f"Hinge: {result['hinge_brand']} — {result['hinges']} pcs",styles['Small']),Paragraph(f"Soft-close: {result['amortisseur_brand']} — {result['amortisseurs']} pcs",styles['Small']),Paragraph(f"Drawer runner: {result['drawer_runner_brand']} — {result['drawer_runners']} pcs",styles['Small']),Paragraph(f"Lift mechanism: {result['hanging_box_brand']} — {result['hanging_boxes']} pcs",styles['Small'])]
     if include_financials:
@@ -1077,39 +1204,98 @@ def build_project_pdf(result, include_financials=True):
 # User Management is a separate administrator-only tab.
 if IS_ADMIN:
     t1, t2, t3, t4, t5, t6 = st.tabs([
-        '1. Project Builder',
-        '2. Bulk Edit',
-        '3. Calculation & Results',
-        '4. Final Report',
-        '5. Projects',
-        '6. User Management'
+        text('item1ProjectBuilder'),
+        text('item2BulkEdit'),
+        text('item3CalculationResults'),
+        text('item4FinalReport'),
+        text('item5Projects'),
+        text('item6UserManagement')
     ])
 else:
     t1, t2, t3, t4, t5 = st.tabs([
-        '1. Project Builder',
-        '2. Bulk Edit',
-        '3. Calculation & Results',
-        '4. Final Report',
-        '5. My Projects'
+        text('item1ProjectBuilder'),
+        text('item2BulkEdit'),
+        text('item3CalculationResults'),
+        text('item4FinalReport'),
+        text('item5MyProjects')
     ])
     t6 = None
 cfg=st.session_state.cfg
 
+@st.dialog('Edit cabinet', width='large')
+def edit_cabinet_dialog(i):
+    x = st.session_state.project[i]
+    cab = x['cabinet']
+    is_panel = cab.get('type') == '2d_panel'
+    st.caption(text('editing').format(name=x['name']))
+    with st.form(f'edit_cabinet_form_{i}'):
+        qcol, wcol, hcol = st.columns(3)
+        edit_qty = qcol.number_input(text('quantity'), 1, 999, int(x.get('qty', 1)), key=f'edit_qty_{i}')
+        edit_w = wcol.number_input(text('widthMm'), 100, 5000, int(cab.get('width', 600) or 600), step=10, key=f'edit_w_{i}')
+        edit_h = hcol.number_input(text('heightMm'), 100, 5000, int(cab.get('height', 780) or 780), step=10, key=f'edit_h_{i}')
+        edit_data = dict(cab)
+        if is_panel:
+            mats = FACADE_MATERIALS
+            current = cab.get('facade', cab.get('material'))
+            edit_facade = st.selectbox(text('facadeMaterial'), mats, index=mats.index(current) if current in mats else 0, key=f'edit_facade_{i}')
+            edit_data['facade'] = edit_facade
+            edit_data['material'] = edit_facade
+        else:
+            dcol, scol, fcol, bcol = st.columns(4)
+            edit_d = dcol.number_input(text('finishedDepthMm'), 100, 1500, int(cab.get('depth', 560) or 560), step=10, key=f'edit_d_{i}')
+            smat = cab.get('material') if cab.get('material') in STRUCTURE_MATERIALS else STRUCTURE_MATERIALS[0]
+            fmat = cab.get('facade') if cab.get('facade') in FACADE_MATERIALS else FACADE_MATERIALS[0]
+            bmat = cab.get('back') if cab.get('back') in BACK_MATERIALS else BACK_MATERIALS[0]
+            edit_data['material'] = scol.selectbox(text('structureMaterial'), STRUCTURE_MATERIALS, index=STRUCTURE_MATERIALS.index(smat), key=f'edit_structure_{i}')
+            edit_data['facade'] = fcol.selectbox(text('facadeMaterial'), FACADE_MATERIALS, index=FACADE_MATERIALS.index(fmat), key=f'edit_facade_{i}')
+            edit_data['back'] = bcol.selectbox(text('backMaterial'), BACK_MATERIALS, index=BACK_MATERIALS.index(bmat), key=f'edit_back_{i}')
+            o1, o2, o3, o4 = st.columns(4)
+            edit_data['shelves'] = o1.number_input(text('shelves'), 0, 50, int(cab.get('shelves', 0) or 0), key=f'edit_shelves_{i}')
+            edit_data['drawers'] = o2.number_input(text('externalDrawerFronts'), 0, 20, int(cab.get('drawers', 0) or 0), key=f'edit_drawers_{i}')
+            edit_data['internal_drawers'] = o3.number_input(text('internalDrawersWithBoxes'), 0, 20, int(cab.get('internal_drawers', 0) or 0), key=f'edit_internal_drawers_{i}')
+            edit_data['vertical_separators'] = o4.number_input(text('verticalSeparators'), 0, 20, int(cab.get('vertical_separators', 0) or 0), key=f'edit_vertical_separators_{i}')
+            if int(edit_data.get('drawers', 0) or 0) + int(edit_data.get('internal_drawers', 0) or 0) > 0:
+                drawer_bottom_options = list(dict.fromkeys(STRUCTURE_MATERIALS + BACK_MATERIALS))
+                preferred_bottom = 'MDF Back 5mm' if 'MDF Back 5mm' in drawer_bottom_options else (cab.get('material') if cab.get('material') in drawer_bottom_options else drawer_bottom_options[0])
+                current_bottom = cab.get('drawer_bottom_material', preferred_bottom)
+                if current_bottom not in drawer_bottom_options:
+                    current_bottom = preferred_bottom
+                edit_data['drawer_bottom_material'] = st.selectbox(text('drawerBottomMaterial'), drawer_bottom_options, index=drawer_bottom_options.index(current_bottom), key=f'edit_drawer_bottom_material_{i}')
+                material_selection(edit_data['drawer_bottom_material'])
+                st.caption(text('drawerBottomNote'))
+            else:
+                edit_data.pop('drawer_bottom_material', None)
+        save_col, cancel_col = st.columns(2)
+        save = save_col.form_submit_button(text('saveChanges'), type='primary')
+        cancel = cancel_col.form_submit_button(text('cancel'))
+        if save:
+            edit_data['width'] = int(edit_w)
+            edit_data['height'] = int(edit_h)
+            if not is_panel:
+                edit_data['depth'] = int(edit_d)
+            st.session_state.project[i] = {'name': x['name'], 'qty': int(edit_qty), 'cabinet': edit_data}
+            st.session_state.pop('editing_cabinet_index', None)
+            st.success(text('cabinetUpdated'))
+            st.rerun()
+        if cancel:
+            st.session_state.pop('editing_cabinet_index', None)
+            st.rerun()
+
 with t1:
-    st.header('Project Builder')
-    st.subheader('Project information')
+    st.header(text('projectBuilder'))
+    st.subheader(text('projectInformation'))
     a,b=st.columns(2)
-    st.session_state.project_name=a.text_input('Project name',st.session_state.get('project_name',''))
-    st.session_state.client_name=b.text_input('Client name',st.session_state.get('client_name',''))
+    st.session_state.project_name=a.text_input(text('projectName'),st.session_state.get('project_name',''))
+    st.session_state.client_name=b.text_input(text('clientName'),st.session_state.get('client_name',''))
     if st.session_state.get('project_id'):
-        st.caption(f"Project ID: **{st.session_state['project_id']}** · Created: {st.session_state.get('project_created_at','')}")
-    st.session_state.project_notes=st.text_area('Project notes',st.session_state.get('project_notes',''),height=70)
+        st.caption(text('projectid').format(id=st.session_state['project_id'], created=st.session_state.get('project_created_at','')))
+    st.session_state.project_notes=st.text_area(text('projectNotes'),st.session_state.get('project_notes',''),height=70)
     a,b,c=st.columns([1,1,3])
-    if a.button('💾 Save Project',type='primary'):
+    if a.button(text('saveProject'),type='primary'):
         pid, err = _save_current_project()
         if err: st.error(err)
-        else: st.success(f'Project saved · ID: {pid}')
-    if b.button('🆕 New Project'):
+        else: st.success(text('saved').format(id=pid))
+    if b.button(text('newProject')):
         for key in ['project','project_result','project_name','client_name','project_notes','project_id','project_created_at','project_updated_at','project_status']:
             st.session_state[key] = [] if key == 'project' else (None if key == 'project_result' else ('' if key not in ['project_status'] else 'Draft'))
         st.session_state['project'] = []
@@ -1121,194 +1307,276 @@ with t1:
         c.caption(f"Current saved project: **{st.session_state['project_id']}**")
 
     st.divider()
-    st.subheader('1. Add cabinets')
+    st.subheader(text('item1AddCabinets'))
     names=list(presets)+['Custom cabinet']
-    a,b=st.columns([4,1]); sel=a.selectbox('Cabinet model',names); q=b.number_input('Quantity',1,999,1)
+    a,b=st.columns([4,1]); sel=a.selectbox(text('cabinetModel'),names); q=b.number_input(text('quantity'),1,999,1)
     if sel=='Custom cabinet':
-        a,b,c=st.columns(3); W=a.number_input('Width (mm)',100,5000,int(custom_cfg['width'])); H=b.number_input('Height (mm)',100,5000,int(custom_cfg['height'])); D=c.number_input('Depth (mm)',100,1500,int(custom_cfg['depth']))
-        a,b,c=st.columns(3); m=a.selectbox('Structure material',list(materials)[:-1]); f=b.selectbox('Facade material',list(materials)[:-1]); bk=c.selectbox('Back material',list(materials)[:-1])
-        a,b,c=st.columns(3); doors=a.number_input('Doors',0,20,int(custom_cfg['doors'])); shelves=b.number_input('Shelves',0,50,int(custom_cfg['shelves'])); drawers=c.number_input('Drawers',0,20,int(custom_cfg['drawers']))
-        dtype=st.radio('Door type',['Panneau','Glass'],horizontal=True)
-        cdata={'width':W,'height':H,'depth':D,'material':m,'facade':f,'back':bk,'doors':doors,'shelves':shelves,'drawers':drawers,'door_type':dtype,'bottom':bool(custom_cfg['bottom']),'back_enabled':bool(custom_cfg['back_enabled']),'gola':0,'plinthe':0}
+        a,b,c=st.columns(3); W=a.number_input(text('widthMm'),100,5000,int(custom_cfg['width'])); H=b.number_input(text('heightMm'),100,5000,int(custom_cfg['height'])); D=c.number_input(text('depthMm'),100,1500,int(custom_cfg['depth']))
+        a,b,c=st.columns(3)
+        default_structure = st.session_state.get('last_structure_material', DEFAULT_PRESET.get('material') if DEFAULT_PRESET.get('material') in STRUCTURE_MATERIALS else STRUCTURE_MATERIALS[0])
+        default_facade = st.session_state.get('last_facade_material', DEFAULT_PRESET.get('facade') if DEFAULT_PRESET.get('facade') in FACADE_MATERIALS else FACADE_MATERIALS[0])
+        default_back = DEFAULT_PRESET.get('back') if DEFAULT_PRESET.get('back') in BACK_MATERIALS else BACK_MATERIALS[0]
+        m=a.selectbox(text('structureMaterial'),STRUCTURE_MATERIALS,index=STRUCTURE_MATERIALS.index(default_structure) if default_structure in STRUCTURE_MATERIALS else 0,key='active_structure_material')
+        f=b.selectbox(text('facadeMaterial'),FACADE_MATERIALS,index=FACADE_MATERIALS.index(default_facade) if default_facade in FACADE_MATERIALS else 0,key='active_facade_material')
+        bk=c.selectbox(text('backMaterial'),BACK_MATERIALS,index=BACK_MATERIALS.index(default_back))
+        doors=st.number_input(text('doors'),0,20,int(custom_cfg.get('doors',1)),key='custom_cabinet_doors')
+        cdata={'width':W,'height':H,'depth':D,'material':m,'facade':f,'back':bk,'doors':doors,'shelves':int(custom_cfg.get('shelves',1)),'drawers':int(custom_cfg.get('drawers',0)),'internal_drawers':0,'vertical_separators':0,'bottom':bool(custom_cfg['bottom']),'back_enabled':bool(custom_cfg['back_enabled']),'gola':0,'plinthe':0}
     else:
         cdata=dict(presets[sel])
         if cdata.get('type') == '2d_panel':
             a,b=st.columns(2)
-            cdata['width']=a.number_input('Width (mm)',100,5000,int(cdata['width']),step=10,key=f'preset_width_{sel}')
-            cdata['height']=b.number_input('Height (mm)',100,5000,int(cdata['height']),step=10,key=f'preset_height_{sel}')
-            mats=list(materials)[:-1]
-            cdata['facade']=st.selectbox('Facade material',mats,index=mats.index(cdata.get('facade')) if cdata.get('facade') in mats else 0,key=f'facade_{sel}')
+            cdata['width']=a.number_input(text('widthMm'),100,5000,int(cdata['width']),step=10,key=f'preset_width_{sel}')
+            cdata['height']=b.number_input(text('heightMm'),100,5000,int(cdata['height']),step=10,key=f'preset_height_{sel}')
+            mats=FACADE_MATERIALS
+            last_facade = st.session_state.get('last_facade_material', cdata.get('facade'))
+            cdata['facade']=st.selectbox(text('facadeMaterial'),mats,index=mats.index(last_facade) if last_facade in mats else (mats.index(cdata.get('facade')) if cdata.get('facade') in mats else 0),key='active_facade_material')
             cdata['material']=cdata['facade']
         else:
             a,b,c=st.columns(3)
-            cdata['width']=a.number_input('Width (mm)',100,5000,int(cdata['width']),step=10,key=f'preset_width_{sel}')
-            cdata['height']=b.number_input('Height (mm)',100,5000,int(cdata['height']),step=10,key=f'preset_height_{sel}')
-            cdata['depth']=c.number_input('Depth (mm)',100,1500,int(cdata['depth']),step=10,key=f'preset_depth_{sel}')
+            cdata['width']=a.number_input(text('widthMm'),100,5000,int(cdata['width']),step=10,key=f'preset_width_{sel}')
+            cdata['height']=b.number_input(text('heightMm'),100,5000,int(cdata['height']),step=10,key=f'preset_height_{sel}')
+            cdata['depth']=c.number_input(text('depthMm'),100,1500,int(cdata['depth']),step=10,key=f'preset_depth_{sel}')
             a,b=st.columns(2)
-            mats=list(materials)[:-1]
-            cdata['material']=a.selectbox('Structure material',mats,index=mats.index(cdata['material']) if cdata.get('material') in mats else 0,key=f'structure_{sel}')
-            cdata['facade']=b.selectbox('Facade material',mats,index=mats.index(cdata['facade']) if cdata.get('facade') in mats else 0,key=f'facade_{sel}')
-            dtype=st.radio('Door type',['Panneau','Glass'],index=1 if cdata.get('door_type')=='Glass' else 0,horizontal=True,key=f'dtype_{sel}')
-            cdata['door_type']='Glass' if dtype=='Glass' else 'Panneau'
-    if st.button('➕ Add cabinet',type='primary'): st.session_state.project.append({'name':sel,'qty':q,'cabinet':cdata}); st.success('Cabinet added.')
+            last_structure = st.session_state.get('last_structure_material', cdata.get('material'))
+            last_facade = st.session_state.get('last_facade_material', cdata.get('facade'))
+            cdata['material']=a.selectbox(text('structureMaterial'),STRUCTURE_MATERIALS,index=STRUCTURE_MATERIALS.index(last_structure) if last_structure in STRUCTURE_MATERIALS else (STRUCTURE_MATERIALS.index(cdata['material']) if cdata.get('material') in STRUCTURE_MATERIALS else 0),key='active_structure_material')
+            cdata['facade']=b.selectbox(text('facadeMaterial'),FACADE_MATERIALS,index=FACADE_MATERIALS.index(last_facade) if last_facade in FACADE_MATERIALS else (FACADE_MATERIALS.index(cdata['facade']) if cdata.get('facade') in FACADE_MATERIALS else 0),key='active_facade_material')
+    if cdata.get('type') != '2d_panel':
+        facade_thickness=float(materials.get(cdata.get('facade',''),{}).get('thickness_mm',0) or 0)
+        calculated_structure_depth=max(0.0,float(cdata.get('depth',0) or 0)-facade_thickness)
+        st.markdown(text('depthinfo').format(depth=float(cdata.get('depth',0)), facade=material_html(cdata.get('facade','')), thickness=facade_thickness, structure=calculated_structure_depth), unsafe_allow_html=True)
+        a,b,c,e=st.columns(4)
+        cdata['shelves']=a.number_input(text('shelves'),0,50,int(cdata.get('shelves',0) or 0),key=f'cabinet_shelves_{sel}')
+        cdata['drawers']=b.number_input(text('externalDrawerFronts'),0,20,int(cdata.get('drawers',0) or 0),key=f'cabinet_drawers_{sel}')
+        cdata['internal_drawers']=c.number_input(text('internalDrawersWithBoxes'),0,20,int(cdata.get('internal_drawers',0) or 0),key=f'cabinet_internal_drawers_{sel}')
+        cdata['vertical_separators']=e.number_input(text('verticalSeparators'),0,20,int(cdata.get('vertical_separators',0) or 0),key=f'cabinet_vertical_separators_{sel}')
+        if int(cdata.get('drawers', 0) or 0) + int(cdata.get('internal_drawers', 0) or 0) > 0:
+            drawer_bottom_options = list(dict.fromkeys(STRUCTURE_MATERIALS + BACK_MATERIALS))
+            preferred_bottom = 'MDF Back 5mm' if 'MDF Back 5mm' in drawer_bottom_options else (cdata.get('material') if cdata.get('material') in drawer_bottom_options else drawer_bottom_options[0])
+            current_bottom = cdata.get('drawer_bottom_material', preferred_bottom)
+            if current_bottom not in drawer_bottom_options:
+                current_bottom = preferred_bottom
+            cdata['drawer_bottom_material'] = st.selectbox(text('drawerBottomMaterial'), drawer_bottom_options, index=drawer_bottom_options.index(current_bottom), key=f'cabinet_drawer_bottom_material_{sel}')
+            material_selection(cdata['drawer_bottom_material'])
+            st.caption(text('drawerBottomNote'))
+        else:
+            cdata.pop('drawer_bottom_material', None)
+    if st.button(text('addCabinet'),type='primary'):
+        if cdata.get('type') != '2d_panel':
+            st.session_state['last_structure_material'] = cdata.get('material')
+        st.session_state['last_facade_material'] = cdata.get('facade', cdata.get('material'))
+        st.session_state.project.append({'name':sel,'qty':q,'cabinet':cdata})
+        st.success(text('cabinetAdded'))
 
     st.divider()
-    st.subheader('2. Current project')
+    st.subheader(text('item2CurrentProject'))
     if st.session_state.project:
         for i,x in enumerate(st.session_state.project):
-            a,b=st.columns([7,1])
-            if x['cabinet'].get('type') == '2d_panel':
-                a.write(f"**{x['name']}** — Qty {x['qty']} · {x['cabinet'].get('width',0)} × {x['cabinet'].get('height',0)} mm · 2D panel")
+            cab=x['cabinet']
+            a,b,c=st.columns([6,1,1])
+            if cab.get('type') == '2d_panel':
+                a.write(f"**{x['name']}** — Qty {x['qty']} · {cab.get('width',0)} × {cab.get('height',0)} mm · 2D panel")
             else:
-                a.write(f"**{x['name']}** — Qty {x['qty']} · {x['cabinet'].get('width',0)} × {x['cabinet'].get('height',0)} × {x['cabinet'].get('depth',0)} mm")
-            if b.button('Remove',key=f'r{i}'): st.session_state.project.pop(i); st.rerun()
-    else: st.info('No cabinets added yet.')
+                a.write(f"**{x['name']}** — Qty {x['qty']} · {cab.get('width',0)} × {cab.get('height',0)} × {cab.get('depth',0)} mm")
+                a.markdown(f"Structure: {material_html(cab.get('material'))} &nbsp; · &nbsp; Facade: {material_html(cab.get('facade', cab.get('material')))} &nbsp; · &nbsp; Shelves: {cab.get('shelves',0)} &nbsp; · &nbsp; Internal drawers: {cab.get('internal_drawers',0)} &nbsp; · &nbsp; Vertical separators: {cab.get('vertical_separators',0)}", unsafe_allow_html=True)
+            if b.button(text('edit'),key=f'edit_cabinet_{i}'):
+                st.session_state['editing_cabinet_index']=i
+                st.rerun()
+            if c.button(text('remove'),key=f'r{i}'):
+                st.session_state.project.pop(i)
+                if st.session_state.get('editing_cabinet_index') == i:
+                    st.session_state.pop('editing_cabinet_index',None)
+                elif isinstance(st.session_state.get('editing_cabinet_index'),int) and st.session_state['editing_cabinet_index'] > i:
+                    st.session_state['editing_cabinet_index'] -= 1
+                st.rerun()
+            if st.session_state.get('editing_cabinet_index') == i:
+                edit_cabinet_dialog(i)
+    else:
+        st.info(text('noCabinetsAddedYet'))
 
     st.divider()
-    st.subheader('3. Project costs')
-    a,b,c,d=st.columns(4)
-    cfg['screws']=a.number_input('Screw boxes',0,100,cfg['screws'])
-    cfg['bits']=b.number_input('Router bit CNCs',0,100,cfg['bits'])
-    cfg['days']=c.number_input('Manufacturing days',0.,365.,cfg['days'])
+    st.subheader(text('item3ProjectCosts'))
+    auto_qty = automatic_production_quantities(st.session_state.project)
+    # Recalculate defaults when the physical cabinet count changes, while preserving
+    # manual overrides as long as the project cabinet count stays the same.
+    previous_count = st.session_state.get('_production_qty_cabinet_count')
+    if previous_count != auto_qty['cabinets']:
+        st.session_state['_production_qty_cabinet_count'] = auto_qty['cabinets']
+        st.session_state['production_screws_input'] = auto_qty['screws']
+        st.session_state['production_bits_input'] = auto_qty['bits']
+        st.session_state['production_days_input'] = auto_qty['days']
+    a,b,c,dcol=st.columns(4)
+    cfg['screws'] = int(a.number_input(
+        text('screwBoxes'), min_value=0, max_value=100000,
+        step=1, key='production_screws_input'))
+    cfg['bits'] = int(b.number_input(
+        text('routerBitCncs'), min_value=0, max_value=100000,
+        step=1, key='production_bits_input'))
+    cfg['days'] = float(c.number_input(
+        text('manufacturingDays'), min_value=0.0, max_value=100000.0,
+        step=1.0, key='production_days_input'))
+    dcol.caption(text('cabinetCount').format(count=auto_qty['cabinets']))
     if IS_ADMIN:
-        cfg['rent']=d.number_input('Rent / day',0,1000000,cfg['rent'])
+        cfg['rent']=dcol.number_input(text('rentDay'),0,1000000,cfg['rent'])
     a,b,c=st.columns(3)
     if IS_ADMIN:
-        cfg['hand']=a.number_input('Manufacturing labor',0,1000000,cfg['hand'])
-        cfg['install']=b.number_input('Client installation',0,1000000,cfg['install'])
-        cfg['transport']=c.number_input('Transport / project',0,1000000,cfg['transport'])
+        cfg['hand']=a.number_input(text('manufacturingLabor'),0,1000000,cfg['hand'])
+        cfg['install']=b.number_input(text('clientInstallation'),0,1000000,cfg['install'])
+        cfg['transport']=c.number_input(text('transportProject'),0,1000000,cfg['transport'])
     a,b=st.columns(2)
-    cfg['structure_edge_roll_price']=a.number_input('Structure Edge Band — roll price', min_value=0.0, max_value=1000000.0, value=float(cfg.get('structure_edge_roll_price',edges['Structure Edge Band']['roll_price'])), step=100.0)
-    cfg['door_edge_roll_price']=b.number_input('Door / Facade Edge Band — roll price', min_value=0.0, max_value=1000000.0, value=float(cfg.get('door_edge_roll_price',edges['Door Edge Band']['roll_price'])), step=100.0)
+    cfg['structure_edge_roll_price']=a.number_input(text('structureEdgeBandRollPrice'), min_value=0.0, max_value=1000000.0, value=float(cfg.get('structure_edge_roll_price',edges['Structure Edge Band']['roll_price'])), step=100.0)
+    cfg['door_edge_roll_price']=b.number_input(text('doorFacadeEdgeBandRollPrice'), min_value=0.0, max_value=1000000.0, value=float(cfg.get('door_edge_roll_price',edges['Door Edge Band']['roll_price'])), step=100.0)
     a,b=st.columns(2)
-    cfg['gola_bar_price']=a.number_input('Gola — bar price', min_value=0.0, max_value=1000000.0, value=float(cfg.get('gola_bar_price',GOLA_BAR_PRICE)), step=100.0)
-    cfg['plinthe_bar_price']=b.number_input('Plinth — bar price', min_value=0.0, max_value=1000000.0, value=float(cfg.get('plinthe_bar_price',PLINTH_BAR_PRICE)), step=100.0)
-    cfg['led_al_m']=st.number_input('LED + Aluminium (m)',0.0,10000.0,float(cfg.get('led_al_m',2.0)),step=0.5)
+    cfg['gola_bar_price']=a.number_input(text('golaBarPrice'), min_value=0.0, max_value=1000000.0, value=float(cfg.get('gola_bar_price',GOLA_BAR_PRICE)), step=100.0)
+    cfg['plinthe_bar_price']=b.number_input(text('plinthBarPrice'), min_value=0.0, max_value=1000000.0, value=float(cfg.get('plinthe_bar_price',PLINTH_BAR_PRICE)), step=100.0)
+    cfg['led_al_m']=st.number_input(text('ledAluminiumM'),0.0,10000.0,float(cfg.get('led_al_m',2.0)),step=0.5)
 
     if IS_ADMIN:
         st.divider()
-        st.subheader('4. Margin strategy')
-        strategy=st.radio('Choose one strategy',['Margin per linear meter','Margin per cubic meter','Fixed margin','X3'],horizontal=True,key='margin_strategy')
+        st.subheader(text('item4MarginStrategy'))
+        strategy=st.radio(text('chooseOneStrategy'),['X3','Margin per linear meter','Margin per cubic meter','Fixed margin'],horizontal=True,key='margin_strategy')
         if strategy=='Margin per linear meter':
-            cfg['margin_m']=st.number_input('Margin / linear meter',0,1000000,cfg['margin_m'])
+            cfg['margin_m']=st.number_input(text('marginLinearMeter'),0,1000000,cfg['margin_m'])
         elif strategy=='Margin per cubic meter':
-            cfg['margin_m3']=st.number_input('Margin / cubic meter',0,10000000,cfg['margin_m3'])
+            cfg['margin_m3']=st.number_input(text('marginCubicMeter'),0,10000000,cfg['margin_m3'])
         elif strategy=='Fixed margin':
-            cfg['fixed']=st.number_input('Fixed margin / project',0,10000000,cfg['fixed'])
+            cfg['fixed']=st.number_input(text('fixedMarginProject'),0,10000000,cfg['fixed'])
         else:
-            st.info('X3 = (all costs − rent − transport − manufacturing labor) × 3')
+            st.info(text('x3NonGlassCostsRentTransportManufacturingLaborInstallation3GlassCost2'))
 
         st.divider()
-        st.subheader('5. Calculation settings')
-        with st.expander('Advanced calculation settings'):
-            a,b,c=st.columns(3); a.number_input('Nesting gap (mm)',0,100,int(nesting_cfg['gap_mm']),key='project_nesting_gap'); b.number_input('Optimization iterations',int(nesting_cfg['min_iterations']),int(nesting_cfg['max_iterations']),int(nesting_cfg['iterations']),step=int(nesting_cfg['iteration_step']),key='nesting_iterations'); c.caption('Rotation: 0° / 90°')
-            a,b,c=st.columns(3); st.session_state.hinge_limits[0]=a.number_input('2 hinges up to mm',100,3000,st.session_state.hinge_limits[0]); st.session_state.hinge_limits[1]=b.number_input('3 hinges up to mm',100,3000,st.session_state.hinge_limits[1]); st.session_state.hinge_limits[2]=c.number_input('4 hinges up to mm',100,4000,st.session_state.hinge_limits[2])
+        st.subheader(text('item5CalculationSettings'))
+        with st.expander(text('advancedCalculationSettings')):
+            a,b,c=st.columns(3); a.number_input(text('nestingGapMm'),0,100,int(nesting_cfg['gap_mm']),key='project_nesting_gap'); b.number_input(text('optimizationIterations'),int(nesting_cfg['min_iterations']),int(nesting_cfg['max_iterations']),int(nesting_cfg['iterations']),step=int(nesting_cfg['iteration_step']),key='nesting_iterations'); c.caption(text('rotation090'))
+            a,b,c=st.columns(3); st.session_state.hinge_limits[0]=a.number_input(text('item2HingesUpToMm'),100,3000,st.session_state.hinge_limits[0]); st.session_state.hinge_limits[1]=b.number_input(text('item3HingesUpToMm'),100,3000,st.session_state.hinge_limits[1]); st.session_state.hinge_limits[2]=c.number_input(text('item4HingesUpToMm'),100,4000,st.session_state.hinge_limits[2])
 
     with t2:
-            st.header('Bulk Edit')
+            st.header(text('bulkEdit'))
             st.divider()
-            st.subheader('Global hardware brands')
-            st.caption('These selections apply to the entire project.')
+            st.subheader(text('globalHardwareBrands'))
+            st.caption(text('theseSelectionsApplyToTheEntireProject'))
             a,b,c,d=st.columns(4)
-            st.session_state['project_hinge_brand']=a.selectbox('Hinge brand',list(hardware['Hinge']),index=list(hardware['Hinge']).index(st.session_state.get('project_hinge_brand')) if st.session_state.get('project_hinge_brand') in hardware['Hinge'] else 0,key='prices_hinge_brand')
-            st.session_state['project_amortisseur_brand']=b.selectbox('Soft-close brand',list(hardware['Amortisseur']),index=list(hardware['Amortisseur']).index(st.session_state.get('project_amortisseur_brand')) if st.session_state.get('project_amortisseur_brand') in hardware['Amortisseur'] else 0,key='prices_amortisseur_brand')
-            st.session_state['project_drawer_runner_brand']=c.selectbox('Drawer runner brand',list(hardware['Drawer runner']),index=list(hardware['Drawer runner']).index(st.session_state.get('project_drawer_runner_brand')) if st.session_state.get('project_drawer_runner_brand') in hardware['Drawer runner'] else 0,key='prices_drawer_runner_brand')
-            st.session_state['project_hanging_box_brand']=d.selectbox('Lift mechanism brand',list(hardware['Hanging box']),index=list(hardware['Hanging box']).index(st.session_state.get('project_hanging_box_brand')) if st.session_state.get('project_hanging_box_brand') in hardware['Hanging box'] else 0,key='prices_hanging_box_brand')
+            st.session_state['project_hinge_brand']=a.selectbox(text('hingeBrand'),list(hardware['Hinge']),index=list(hardware['Hinge']).index(st.session_state.get('project_hinge_brand')) if st.session_state.get('project_hinge_brand') in hardware['Hinge'] else 0,key='prices_hinge_brand')
+            st.session_state['project_amortisseur_brand']=b.selectbox(text('softCloseBrand'),list(hardware['Amortisseur']),index=list(hardware['Amortisseur']).index(st.session_state.get('project_amortisseur_brand')) if st.session_state.get('project_amortisseur_brand') in hardware['Amortisseur'] else 0,key='prices_amortisseur_brand')
+            st.session_state['project_drawer_runner_brand']=c.selectbox(text('drawerRunnerBrand'),list(hardware['Drawer runner']),index=list(hardware['Drawer runner']).index(st.session_state.get('project_drawer_runner_brand')) if st.session_state.get('project_drawer_runner_brand') in hardware['Drawer runner'] else 0,key='prices_drawer_runner_brand')
+            st.session_state['project_hanging_box_brand']=d.selectbox(text('liftMechanismBrand'),list(hardware['Hanging box']),index=list(hardware['Hanging box']).index(st.session_state.get('project_hanging_box_brand')) if st.session_state.get('project_hanging_box_brand') in hardware['Hanging box'] else 0,key='prices_hanging_box_brand')
             st.divider()
-            st.subheader('Global material changes')
-            a,b=st.columns(2); gm=a.selectbox('New facade material',list(materials)[:-1],key='bulk_facade'); sm=b.selectbox('New structure material',list(materials)[:-1],key='bulk_structure')
-            if st.button('Apply global facade change'): 
+            st.subheader(text('globalMaterialChanges'))
+            a,b=st.columns(2); gm=a.selectbox(text('newFacadeMaterial'),FACADE_MATERIALS,key='bulk_facade'); sm=b.selectbox(text('newStructureMaterial'),STRUCTURE_MATERIALS,key='bulk_structure')
+            if st.button(text('applyGlobalFacadeChange')):
                 for x in st.session_state.project:
-                    if x['cabinet'].get('door_type')!='Glass': x['cabinet']['facade']=gm
-                st.success('Global facade material changed.')
-            if st.button('Apply global structure change'):
+                    x['cabinet']['facade']=gm
+                st.success(text('globalFacadeMaterialChanged'))
+            if st.button(text('applyGlobalStructureChange')):
                 for x in st.session_state.project: x['cabinet']['material']=sm
-                st.success('Global structure material changed.')
+                st.success(text('globalStructureMaterialChanged'))
     with t3:
-        st.header('Calculation & Results')
+        st.header(text('calculationResults'))
         st.divider()
         if not st.session_state.project:
-            st.info('Build the project first, then calculate it here.')
+            st.info(text('buildTheProjectFirstThenCalculateItHere'))
         else:
-            st.write(f"**{st.session_state.get('project_name') or 'Unnamed project'}** · {len(st.session_state.project)} cabinet line(s)")
-            if st.button('Calculate / Recalculate project',type='primary'):
+            st.write('**' + (st.session_state.get('project_name') or text('unnamed')) + '** · ' + text('cabinetlines').format(name='', count=len(st.session_state.project)).lstrip(' ·'))
+            if st.button(text('calculateRecalculateProject'),type='primary'):
                 calculate_project()
             result=st.session_state.get('project_result')
             if result:
                 # Users do not see internal financial metrics. Admins see the full financial row.
                 if IS_ADMIN:
                     a,b,c,d,e,f=st.columns(6)
-                    a.metric('Linear meters',f"{result['linear_m']:.2f} m")
-                    b.metric('Volume',f"{result['volume_m3']:.3f} m³")
-                    c.metric('COGS',f"{result['cogs']:,.0f} DA")
-                    d.metric('Selling price',f"{result['selling_price']:,.0f} DA")
-                    e.metric('Margin',f"{result['margin']:,.0f} DA")
-                    f.metric('Margin %',f"{result['margin_pct']:.1f}%")
-                    st.caption(f"Margin strategy: {result['margin_label']}")
+                    a.metric(text('linearMeters'),f"{result['linear_m']:.2f} m")
+                    b.metric(text('volume'),f"{result['volume_m3']:.3f} m³")
+                    c.metric(text('cogs'),f"{result['cogs']:,.0f} DA")
+                    d.metric(text('sellingPrice'),f"{result['selling_price']:,.0f} DA")
+                    e.metric(text('margin'),f"{result['margin']:,.0f} DA")
+                    f.metric(text('margin2'),f"{result['margin_pct']:.1f}%")
+                    st.caption(text('strategy').format(strategy=result['margin_label']))
                 else:
                     a,b,c=st.columns(3)
-                    a.metric('Linear meters',f"{result['linear_m']:.2f} m")
-                    b.metric('Volume',f"{result['volume_m3']:.3f} m³")
-                    c.metric('Selling price',f"{result['selling_price']:,.0f} DA")
+                    a.metric(text('linearMeters'),f"{result['linear_m']:.2f} m")
+                    b.metric(text('volume'),f"{result['volume_m3']:.3f} m³")
+                    c.metric(text('sellingPrice'),f"{result['selling_price']:,.0f} DA")
                 a,b,c,d=st.columns(4)
-                a.metric('Gola',f"{result['gola_m']:.2f} m · {result['gola_bars']} bar(s)")
-                b.metric('Plinth',f"{result['plinthe_m']:.2f} m · {result['plinthe_bars']} bar(s)")
-                c.metric('Panels',sum(result['counts'].values()))
-                d.metric('Cabinets',sum(int(x.get('qty',1)) for x in st.session_state.project))
+                a.metric(text('gola'),f"{result['gola_m']:.2f} m · {result['gola_bars']} bar(s)")
+                b.metric(text('plinth'),f"{result['plinthe_m']:.2f} m · {result['plinthe_bars']} bar(s)")
+                c.metric(text('panels'),sum(result['counts'].values()))
+                d.metric(text('cabinets'),sum(int(x.get('qty',1)) for x in st.session_state.project))
                 st.divider()
-                st.subheader('Cabinets in project')
+                st.subheader(text('cabinetsInProject'))
                 st.dataframe(pd.DataFrame([{'Cabinet':x['name'],'Quantity':x['qty'],'Width (mm)':x['cabinet'].get('width',0),'Linear meters':float(x['cabinet'].get('width',0))*float(x.get('qty',1))*float(x.get('linear_meter_multiplier',1))/1000} for x in st.session_state.project]),use_container_width=True,hide_index=True)
                 st.divider()
-                st.subheader('Nesting / Sheet Details')
+                st.subheader(text('nestingSheetDetails'))
                 sr=pd.DataFrame(result['sheet_rows']).copy()
                 if not IS_ADMIN:
                     sr=sr.drop(columns=[c for c in ['Unit price (DA)','COGS (DA)'] if c in sr.columns],errors='ignore')
-                st.dataframe(sr,use_container_width=True,hide_index=True)
+                # Render the sheet table as HTML so the sheet type can reuse the
+                # same preset-driven material color dot used elsewhere in the app.
+                display_cols=list(sr.columns)
+                header_html=''.join(f'<th style="text-align:left;padding:8px;border-bottom:1px solid #ddd;background:#f6f7f9">{str(col)}</th>' for col in display_cols)
+                row_html=[]
+                for _, sheet_row in sr.iterrows():
+                    cells=[]
+                    for col in display_cols:
+                        value=sheet_row[col]
+                        if col == 'Sheet type':
+                            cell=material_html(str(value))
+                        elif col == 'Sheet Utilisation (%)':
+                            cell=f'{float(value):.1f}'
+                        elif col in ('Unit price (DA)','COGS (DA)'):
+                            cell=f'{float(value):,.0f}'
+                        else:
+                            cell=str(value)
+                        cells.append(f'<td style="padding:8px;border-bottom:1px solid #e5e7eb">{cell}</td>')
+                    row_html.append('<tr>'+''.join(cells)+'</tr>')
+                st.markdown(
+                    '<div style="overflow-x:auto;border:1px solid #e5e7eb;border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr>'+header_html+'</tr></thead><tbody>'+''.join(row_html)+'</tbody></table></div>',
+                    unsafe_allow_html=True,
+                )
                 st.divider()
-                st.subheader('Other Cost Details')
+                st.subheader(text('otherCostDetails'))
                 cr=pd.DataFrame(result['cogs_rows']).copy()
                 if not IS_ADMIN:
                     cr=cr.drop(columns=[c for c in ['Unit price (DA)','COGS (DA)'] if c in cr.columns],errors='ignore')
                 st.dataframe(cr,use_container_width=True,hide_index=True)
-                with st.expander('Visual nesting',expanded=False):
+                with st.expander(text('visualNesting'),expanded=False):
                     sheets=result['sheets']
                     if sheets:
                         st.session_state['nesting_carousel_index']=max(0,min(st.session_state.get('nesting_carousel_index',0),len(sheets)-1))
                         p1,p2,p3=st.columns([1,2,1])
-                        if p1.button('← Previous',disabled=st.session_state['nesting_carousel_index']==0,key='nesting_previous_v53'):
+                        if p1.button(text('previous'),disabled=st.session_state['nesting_carousel_index']==0,key='nesting_previous_v53'):
                             st.session_state['nesting_carousel_index']-=1; st.rerun()
                         p2.markdown(f"**Sheet {st.session_state['nesting_carousel_index']+1} / {len(sheets)}**")
-                        if p3.button('Next →',disabled=st.session_state['nesting_carousel_index']>=len(sheets)-1,key='nesting_next_v53'):
+                        if p3.button(text('next'),disabled=st.session_state['nesting_carousel_index']>=len(sheets)-1,key='nesting_next_v53'):
                             st.session_state['nesting_carousel_index']+=1; st.rerun()
                         st.image(st.session_state['nesting_images'][st.session_state['nesting_carousel_index']],use_container_width=True)
 
     with t4:
-        st.header('Final Project Report')
+        st.header(text('finalProjectReport'))
         st.divider()
         result=st.session_state.get('project_result')
         if not st.session_state.project:
-            st.info('Build the project first.')
+            st.info(text('buildTheProjectFirst'))
         elif not result:
-            st.warning('Calculate the project first in Step 3.')
+            st.warning(text('calculateTheProjectFirstInStep3'))
         else:
             if IS_ADMIN:
-                st.success('Project calculation is ready. Generate the final PDF report below.')
-                a,b,c,d=st.columns(4); a.metric('COGS',f"{result['cogs']:,.0f} DA"); b.metric('Selling price',f"{result['selling_price']:,.0f} DA"); c.metric('Margin',f"{result['margin']:,.0f} DA"); d.metric('Margin %',f"{result['margin_pct']:.1f}%")
+                st.success(text('projectCalculationIsReadyGenerateTheFinalPdfReportBelow'))
+                a,b,c,d=st.columns(4); a.metric(text('cogs'),f"{result['cogs']:,.0f} DA"); b.metric(text('sellingPrice'),f"{result['selling_price']:,.0f} DA"); c.metric(text('margin'),f"{result['margin']:,.0f} DA"); d.metric(text('margin2'),f"{result['margin_pct']:.1f}%")
             else:
-                st.success(f"FINAL CLIENT PRICE: {result['selling_price']:,.0f} DA")
-            if st.button('📄 Generate Project PDF',type='primary'):
+                st.success(text('finalprice').format(price=result['selling_price']))
+            if st.button(text('generateProjectPdf'),type='primary'):
                 pdf_bytes=build_project_pdf(result, include_financials=IS_ADMIN)
-                st.download_button('Download Project PDF',data=pdf_bytes,file_name=f"Al_Moudir_Project_{st.session_state.get('project_id') or 'Report'}.pdf",mime='application/pdf')
+                st.download_button(text('downloadProjectPdf'),data=pdf_bytes,file_name=f"Al_Moudir_Project_{st.session_state.get('project_id') or 'Report'}.pdf",mime='application/pdf')
             if IS_ADMIN:
-                st.write('The report includes project information, cabinet details, hardware selections and quantities, sheet/material COGS, other COGS, Gola/Plinth, nesting settings, and the final financial summary.')
+                st.write(text('theReportIncludesProjectInformationCabinetDetailsHardwareSelectionsAndQuantitiesSheetMaterialCogsOtherCogsGolaPlinthNestingSettingsAndTheFinalFinancialSummary'))
 
 # Saved projects
 with t5:
-    st.header('All Projects' if IS_ADMIN else 'My Projects')
+    st.header(text('allprojects') if IS_ADMIN else text('myprojects'))
     st.divider()
     rows = _list_projects()
     if rows:
-        search = st.text_input('Search projects', placeholder='Project ID, project name, client, or user')
+        search = st.text_input(text('searchProjects'), placeholder='Project ID, project name, client, or user')
         filtered = []
         q = search.strip().lower()
         for row in rows:
@@ -1330,15 +1598,15 @@ with t5:
         if table:
             st.dataframe(pd.DataFrame(table),use_container_width=True,hide_index=True)
             ids=[r['project_id'] for r in filtered]
-            selected=st.selectbox('Select project',ids,key='saved_project_selector')
+            selected=st.selectbox(text('selectProject'),ids,key='saved_project_selector')
             a,b,c=st.columns(3)
-            if a.button('📂 Open Project',type='primary'):
+            if a.button(text('openProject'),type='primary'):
                 ok, err = _load_project(selected)
                 if err: st.error(err)
                 else:
-                    st.success(f'Project {selected} loaded.')
+                    st.success(text('loaded').format(id=selected))
                     st.rerun()
-            if b.button('🗑️ Delete Project'):
+            if b.button(text('deleteProject')):
                 if _delete_project(selected):
                     if st.session_state.get('project_id') == selected:
                         st.session_state['project_id']=''
@@ -1346,11 +1614,11 @@ with t5:
                         st.session_state['project_updated_at']=''
                         st.session_state['project']='[]' if False else []
                         st.session_state['project_result']=None
-                    st.success('Project deleted.')
+                    st.success(text('projectDeleted'))
                     st.rerun()
                 else:
-                    st.error('Unable to delete this project.')
-            if c.button('📋 Duplicate Project'):
+                    st.error(text('unableToDeleteThisProject'))
+            if c.button(text('duplicateProject')):
                 ok, err = _load_project(selected)
                 if err:
                     st.error(err)
@@ -1358,17 +1626,17 @@ with t5:
                     st.session_state['_pending_duplicate_after_load'] = True
                     st.rerun()
         else:
-            st.info('No projects match your search.')
+            st.info(text('noProjectsMatchYourSearch'))
     else:
-        st.info('No saved projects yet. Build a project and click Save Project.')
+        st.info(text('noSavedProjectsYetBuildAProjectAndClickSaveProject'))
 
 
 if IS_ADMIN:
     with t6:
-        st.header('User Management')
-        st.caption('Administrators can create users, disable accounts and reset passwords. Passwords are stored as salted PBKDF2 hashes.')
+        st.header(text('userManagement'))
+        st.caption(text('administratorsCanCreateUsersDisableAccountsAndResetPasswordsPasswordsAreStoredAsSaltedPbkdf2Hashes'))
         users=_load_users()
-        st.subheader('Existing users')
+        st.subheader(text('existingUsers'))
         table=[]
         for uname,u in users.items():
             table.append({
@@ -1379,47 +1647,47 @@ if IS_ADMIN:
             })
         st.dataframe(pd.DataFrame(table),use_container_width=True,hide_index=True)
         st.divider()
-        st.subheader('Create user')
+        st.subheader(text('createUser'))
         with st.form('create_user_form'):
-            nu=st.text_input('Username',key='new_username')
-            np=st.text_input('Password',type='password',key='new_password')
-            nr=st.selectbox('Role',['user','admin'],key='new_role')
-            create=st.form_submit_button('Create user',type='primary')
+            nu=st.text_input(text('username'),key='new_username')
+            np=st.text_input(text('password'),type='password',key='new_password')
+            nr=st.selectbox(text('role'),['user','admin'],key='new_role')
+            create=st.form_submit_button(text('createUser'),type='primary')
         if create:
             nu=nu.strip()
             if not nu or not np:
-                st.error('Username and password are required.')
+                st.error(text('usernameAndPasswordAreRequired'))
             elif nu in users:
-                st.error('That username already exists.')
+                st.error(text('thatUsernameAlreadyExists'))
             else:
                 ok, err = _create_user(nu, np, nr, _user_default_margin_strategy())
                 if not ok:
                     st.error(err)
                 else:
-                    st.success(f'User {nu} created.')
+                    st.success(text('usercreated').format(name=nu))
                     st.rerun()
         st.divider()
-        st.subheader('Manage user')
+        st.subheader(text('manageUser'))
         candidates=[u for u in users if u != st.session_state.get('username')]
         if candidates:
-            target=st.selectbox('User',candidates,key='manage_user')
+            target=st.selectbox(text('user'),candidates,key='manage_user')
             a,b=st.columns(2)
-            new_role=a.selectbox('Role',['user','admin'],index=0 if users[target].get('role')=='user' else 1,key='manage_role')
-            new_active=b.checkbox('Active',value=bool(users[target].get('active',True)),key='manage_active')
+            new_role=a.selectbox(text('role'),['user','admin'],index=0 if users[target].get('role')=='user' else 1,key='manage_role')
+            new_active=b.checkbox(text('active'),value=bool(users[target].get('active',True)),key='manage_active')
             strategy_options=USER_MARGIN_STRATEGIES
             current_strategy=users[target].get('margin_strategy', _user_default_margin_strategy())
             if current_strategy not in strategy_options:
                 current_strategy=_user_default_margin_strategy()
             new_strategy=st.selectbox(
-                'Margin strategy',
+                text('marginStrategy'),
                 strategy_options,
                 index=strategy_options.index(current_strategy),
                 key='manage_margin_strategy'
             )
-            new_pw=st.text_input('New password (leave blank to keep current)',type='password',key='manage_password')
-            if st.button('Save user changes',type='primary'):
+            new_pw=st.text_input(text('newPasswordLeaveBlankToKeepCurrent'),type='password',key='manage_password')
+            if st.button(text('saveUserChanges'),type='primary'):
                 _update_user(target, new_role, new_active, new_strategy, new_pw)
-                st.success('User updated.')
+                st.success(text('userUpdated'))
                 st.rerun()
         else:
-            st.info('No other users to manage.')
+            st.info(text('noOtherUsersToManage'))

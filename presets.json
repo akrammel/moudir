@@ -5,50 +5,57 @@
       "sheet_h": 3660,
       "price": 12500,
       "color": "#E74C3C",
-      "thickness_mm": 17
+      "thickness_mm": 17,
+      "canbefacade": 1
     },
     "High Gloss 18mm": {
       "sheet_w": 1200,
       "sheet_h": 2800,
       "price": 10000,
       "color": "#3498DB",
-      "thickness_mm": 18
+      "thickness_mm": 18,
+      "canbefacade": 1
     },
     "MDF Back 5mm": {
-      "sheet_w": 1200,
-      "sheet_h": 2400,
+      "sheet_w": 1220,
+      "sheet_h": 2440,
       "price": 1350,
       "color": "#2ECC71",
-      "thickness_mm": 5
+      "thickness_mm": 5,
+      "canbefacade": 0
     },
     "Glass": {
-      "price_m2": 15000,
+      "price_m2": 10000,
       "sheet_w": 0,
       "sheet_h": 0,
-      "price": 15000,
+      "price": 10000,
       "color": "#F1C40F",
-      "thickness_mm": 0
+      "thickness_mm": 18,
+      "canbefacade": 1
     },
     "EGGER 19mm": {
       "sheet_w": 2800,
       "sheet_h": 2070,
       "price": 23000,
       "color": "#9B59B6",
-      "thickness_mm": 19
+      "thickness_mm": 19,
+      "canbefacade": 1
     },
     "Melamine 16mm": {
       "sheet_w": 1790,
       "sheet_h": 3660,
       "price": 9500,
       "color": "#E67E22",
-      "thickness_mm": 16
+      "thickness_mm": 16,
+      "canbefacade": 1
     },
     "Melamine 19mm": {
       "sheet_w": 2800,
       "sheet_h": 2100,
       "price": 14000,
       "color": "#1ABC9C",
-      "thickness_mm": 19
+      "thickness_mm": 19,
+      "canbefacade": 1
     }
   },
   "edge_bands": {
@@ -85,7 +92,7 @@
       "price": 350
     },
     "Router bit": {
-      "price": 2000
+      "price": 1700
     },
     "Leg": {
       "price": 70
@@ -305,6 +312,14 @@
       "type": "2d_panel",
       "linear_meter_multiplier": 0
     },
+    "Kitchen finishing panel — Glass": {
+      "width": 600,
+      "height": 780,
+      "material": "Glass",
+      "facade": "Glass",
+      "type": "2d_panel",
+      "linear_meter_multiplier": 0
+    },
     "Colonne réfrigérateur": {
       "width": 800,
       "height": 2600,
@@ -372,7 +387,7 @@
       "split_back": 2,
       "linear_meter_multiplier": 3
     },
-    "Dressing — short element": {
+    "Dressing — short element 02 doors": {
       "width": 800,
       "height": 600,
       "depth": 500,
@@ -381,7 +396,28 @@
       "back": "MDF Back 5mm",
       "doors": 2,
       "drawers": 0,
-      "shelves": 1,
+      "shelves": 0,
+      "hanging_boxes": 0,
+      "amortisseurs_per_door": 0,
+      "gola": 0,
+      "plinthe": 0,
+      "top": {
+        "type": "full"
+      },
+      "legs": 0,
+      "split_back": 0,
+      "linear_meter_multiplier": 1
+    },
+    "Dressing — short element 01 door": {
+      "width": 800,
+      "height": 600,
+      "depth": 500,
+      "material": "MDF 17mm",
+      "facade": "High Gloss 18mm",
+      "back": "MDF Back 5mm",
+      "doors": 1,
+      "drawers": 0,
+      "shelves": 0,
       "hanging_boxes": 0,
       "amortisseurs_per_door": 0,
       "gola": 0,
@@ -474,7 +510,10 @@
       "rent_per_day": 9000,
       "led_strip_price_per_m": 70,
       "aluminium_bar_length_m": 2.4,
-      "aluminium_bar_price": 550
+      "aluminium_bar_price": 550,
+      "screw_box_per_cabinets": 10,
+      "router_bit_per_cabinets": 20,
+      "cabinets_per_manufacturing_day": 15
     },
     "margin": {
       "default_per_linear_meter": 10000,
@@ -490,7 +529,8 @@
       "drawers": 0,
       "bottom": 1,
       "back_enabled": 1,
-      "door_type": "Panneau"
+      "internal_drawers": 0,
+      "vertical_separators": 0
     }
   }
 }
